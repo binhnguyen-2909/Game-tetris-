@@ -16,6 +16,14 @@ public class Piece {
         this.y = 0;
     }
 
+    public Piece(Piece other) {
+        this.type = other.type;
+        this.shape = copyShape(other.shape);
+        this.x = other.x;
+        this.y = other.y;
+        this.wasRotated = other.wasRotated;
+    }
+
     public void rotateClockwise() {
         int[][] rotated = rotateMatrix(shape);
         this.shape = rotated;
@@ -38,6 +46,14 @@ public class Piece {
             }
         }
         return rotated;
+    }
+
+    private static int[][] copyShape(int[][] source) {
+        int[][] copy = new int[source.length][];
+        for (int i = 0; i < source.length; i++) {
+            copy[i] = source[i].clone();
+        }
+        return copy;
     }
 
     public void moveLeft() {

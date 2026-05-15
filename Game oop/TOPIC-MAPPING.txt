@@ -1,0 +1,215 @@
+===========================================================
+   ANH XA KIEN THUC KHOA HOC <-> CODE GAME BLOCK BLAST
+   (Da ra soat truc tiep tu code - cap nhat 2026-05-15)
+===========================================================
+Duong dan goc: Game oop/src/main/java/
+Tong cong: 3761 dong code Java
+Format: <file>:<dong> -- mo ta
+
+-----------------------------------------------------------
+1. OOP AND JAVA
+-----------------------------------------------------------
+- game/BlockBlastGame.java:17-40
+  Class ke thua "extends Application" (JavaFX) va override start().
+  Encapsulation: private fields, public method showGame/showMenu...
+
+- game/Piece.java (toan file)
+  Class Piece dong goi shape[][], x, y, color. Cung cap getter/
+  setter va hanh vi (moveLeft/Right, rotate). Vi du chuan ve
+  Encapsulation.
+
+- game/rules/GameRuleStrategy.java (interface)
+  + game/rules/MarathonRules.java, SprintRules.java,
+    ChallengeRules.java, ZenRules.java (implements interface)
+  + GameController.java:26  private GameRuleStrategy ruleStrategy
+  + GameController.java:83-99 switch chon class concrete
+  => STRATEGY PATTERN + INTERFACE + POLYMORPHISM.
+     Controller chi giu kieu interface, goi ruleStrategy.update()
+     ma khong biet loai luat cu the.
+
+- game/GameMode.java (enum 4 hang co constructor + field)
+- game/Difficulty.java (enum co fallSpeed, initialRows)
+- ui/Theme.java:9-11 (enum ThemeType: DARK, LIGHT, NEON, PASTEL, RETRO)
+  => ENUM nang cao (co field, constructor, method).
+
+- game/GameBoard.java:24-40, 42-75, 77-102
+  3 inner class: BoardCell, ClearResult, BoardState.
+  => Minh hoa NESTED/INNER CLASS va INFORMATION HIDING (cac field
+     private final, chi expose qua getter).
+
+* Generics (con cua OOP/Java):
+  - utils/GameScore.java:3        implements Comparable<GameScore>
+  - utils/LeaderboardManager.java:9, 25  List<GameScore>
+  - game/GameController.java:22-23  Queue<Piece>, Stack<GameSnapshot>
+  - ui/ParticleSystem.java:13, 53  ArrayList/Iterator<ParticleEffect>
+  - ui/DifficultyScreen.java:16    Consumer<Difficulty>
+
+-----------------------------------------------------------
+2. ARRAYS
+-----------------------------------------------------------
+- game/Piece.java:32-41
+  Xoay ma tran 2D 90 do: rotated[j][size-1-i] = matrix[i][j].
+  Bai toan mang 2D kinh dien.
+
+- game/GameBoard.java:14, 110
+  int[][] grid = new int[HEIGHT][WIDTH] -- mang 2D la "ban co" cua game.
+
+- game/GameBoard.java:113-134 (canPlace)
+- game/GameBoard.java:136-153 (placePiece)
+  Vong for long nhau duyet shape 2D + grid 2D de kiem tra va dat khoi.
+
+- game/GameBoard.java:181-195 (clearFullRowsInternal)
+  Duyet mang 2D theo dong de tim hang day, sau do removeRow()
+  dich cac dong xuong (grid[i] = grid[i-1].clone()).
+
+- game/GameBoard.java:227-228
+  int[] dRow = {-1,1,0,0}; int[] dCol = {0,0,-1,1}; -- mang 1D
+  delta huong cho BFS 4 chieu.
+
+- ui/Theme.java:101-109  Color[] pieceColors -- mang 1D mau cho 7 khoi.
+
+-----------------------------------------------------------
+3. SORTING
+-----------------------------------------------------------
+- utils/GameScore.java:3, compareTo()
+  implements Comparable<GameScore>, override compareTo() =
+  Integer.compare(other.score, this.score) -> sort GIAM DAN theo diem.
+
+- utils/LeaderboardManager.java:18, 62
+  scores.sort(null) -- sort List theo thu tu tu nhien (Comparable).
+
+-----------------------------------------------------------
+4. QUEUE, STACK
+-----------------------------------------------------------
+*** QUEUE ***
+- game/GameController.java:22, 76
+  Queue<Piece> pieceQueue = new LinkedList<>()
+  => Hang doi cac khoi sap toi (next-piece preview).
+
+- game/GameController.java:244  currentPiece = pieceQueue.poll()
+- game/GameController.java:255-258 fillPieceQueue() (add vao queue)
+- game/GameController.java:376  pieceQueue.peek()
+  => Day du 3 thao tac queue: add (enqueue), poll (dequeue), peek.
+
+- game/GameBoard.java:223
+  Queue<BoardCell> queue = new ArrayDeque<>()
+  => Queue cho thuat toan BFS (xem muc Graphs).
+
+*** STACK ***
+- game/GameController.java:23, 77
+  Stack<GameSnapshot> moveHistory = new Stack<>()
+  => Ngan xep luu lich su nuoc di.
+
+- game/GameController.java:328  moveHistory.push(new GameSnapshot(...))
+- game/GameController.java:304  GameSnapshot snapshot = moveHistory.pop()
+- game/GameController.java:299-311 undoLastMove()
+  => UNDO bang Stack (LIFO) -- ung dung thuc te kinh dien cua Stack.
+
+-----------------------------------------------------------
+5. LIST
+-----------------------------------------------------------
+- utils/LeaderboardManager.java:9-12, 25
+  List<GameScore> scores = new ArrayList<>() -- top diem cao.
+
+- game/GameBoard.java:20-21
+  List<Integer> lastClearedRows = new ArrayList<>()
+  List<BoardCell> lastClearedCells = new ArrayList<>()
+
+- game/GameBoard.java:222 List<BoardCell> cluster = new ArrayList<>()
+  -- ket qua BFS.
+
+- ui/ParticleSystem.java:13, 17  ArrayList<ParticleEffect>,
+  duyet bang Iterator de remove an toan.
+
+-----------------------------------------------------------
+6. RECURSION
+-----------------------------------------------------------
+- game/GameBoard.java:249-262  floodFillClear()
+  HAM DE QUY 4 huong:
+      return 1
+        + floodFillClear(row-1, col, ...)
+        + floodFillClear(row+1, col, ...)
+        + floodFillClear(row, col-1, ...)
+        + floodFillClear(row, col+1, ...);
+  Base case: out-of-bound / da visit / khac mau.
+  => Day la DFS de quy + FLOOD FILL kinh dien (giong to mau Paint).
+
+-----------------------------------------------------------
+7. ADVANCED SORTING
+-----------------------------------------------------------
+KHONG TIM THAY -- code chi dung sort() san co (TimSort cua JDK,
+ban chat la merge sort cai tien, nhung khong tu cai). Co the mo
+rong: tu viet QuickSort/MergeSort cho leaderboard.
+
+-----------------------------------------------------------
+8. BINARY TREE
+-----------------------------------------------------------
+KHONG TIM THAY -- khong co TreeMap/TreeSet hay cay tu cai.
+Co the mo rong: dung TreeMap<Integer, GameScore> trong
+LeaderboardManager de luu diem (tu sap xep).
+
+-----------------------------------------------------------
+9. HASH TABLE
+-----------------------------------------------------------
+- ui/Theme.java:3, 87-88
+  HashMap<ThemeType, Palette> palettes = new HashMap<>()
+  put(ThemeType.DARK, ...), put(ThemeType.LIGHT, ...), ...
+  => Anh xa Theme -> bang mau, tra cuu O(1) thay vi switch/case.
+
+-----------------------------------------------------------
+10. GRAPHS
+-----------------------------------------------------------
+Coi grid 2D la GRAPH: moi o = 1 dinh, canh = 4 huong lan can
+cung mau. Game co ca BFS va DFS:
+
+*** BFS (Breadth-First Search) ***
+- game/GameBoard.java:220-247  findConnectedClusterWithBfs()
+  Dung Queue<BoardCell> + boolean[][] visited + mang delta
+  dRow/dCol. Tim TAT CA o lan can cung mau (cluster lien thong)
+  bat dau tu (startRow, startCol).
+  => Day la BFS chuan tren do thi luoi (grid graph).
+
+*** DFS (Depth-First Search) ***
+- game/GameBoard.java:249-262  floodFillClear()
+  DFS de quy 4 huong de xoa toan bo cum lien thong cung mau.
+
+*** Cach goi ***
+- game/GameBoard.java:197-218 clearSameColorGroups()
+  Vong for duyet moi o chua visit -> chay BFS de dem cum
+  -> neu cum >= 5 o thi chay DFS xoa.
+  => Bai toan CONNECTED COMPONENTS tren graph.
+
+-----------------------------------------------------------
+11. GRAPHS ADV.
+-----------------------------------------------------------
+KHONG TIM THAY -- khong co Dijkstra/MST/Topological Sort.
+Game khong can duong di ngan nhat hay cay khung.
+
+===========================================================
+TONG KET
+===========================================================
+Topic DA AP DUNG (8/11):
+
+   [X] 1. OOP and Java     -- xuong song toan game (Strategy,
+                              Enum, Inheritance, Inner class,
+                              Generics, Polymorphism).
+   [X] 2. Arrays           -- grid 2D, xoay matrix, delta array.
+   [X] 3. Sorting          -- Comparable + List.sort().
+   [X] 4. Queue + Stack    -- pieceQueue (next-piece) +
+                              moveHistory (undo).
+   [X] 5. List             -- ArrayList rai rac.
+   [X] 6. Recursion        -- floodFillClear de quy 4 huong.
+   [X] 9. Hash Table       -- HashMap palettes trong Theme.
+   [X] 10. Graphs          -- BFS + DFS tren grid graph,
+                              bai toan connected components.
+
+Topic CHUA AP DUNG (3/11):
+
+   [ ] 7. Advanced Sorting -- chua tu cai merge/quick/heap.
+   [ ] 8. Binary Tree      -- chua dung TreeMap/TreeSet.
+   [ ] 11. Graphs Adv.     -- chua co Dijkstra/MST.
+
+=> Game nay la VI DU RAT TOT cho 8/11 chu de ban da hoc.
+   Dac biet hay: muc 10 (Graphs) - cung mot bai toan
+   (xoa cum cung mau) duoc giai bang CA BFS LAN DFS de quy,
+   giup ban thay ro su khac biet giua hai kieu duyet.

@@ -5,16 +5,25 @@ import game.rules.GameRuleStrategy;
 import game.rules.MarathonRules;
 import game.rules.SprintRules;
 import game.rules.ZenRules;
+import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Queue;
+import java.util.Stack;
 import utils.GameScore;
 import utils.LeaderboardManager;
 
 public class GameController {
+    private static final int NEXT_QUEUE_SIZE = 3;
+    private static final int MAX_UNDO_HISTORY = 30;
+
     private GameBoard board;
     private Piece currentPiece;
-    private Piece nextPiece;
+    private Queue<Piece> pieceQueue;
+    private Stack<GameSnapshot> moveHistory;
     private Difficulty difficulty;
     private GameMode gameMode;
-    private GameRuleStrategy ruleStrategy; // Strategy pattern
+    private GameRuleStrategy ruleStrategy;
     private LeaderboardManager leaderboardManager;
     private boolean gameOver = false;
     private long lastFallTime = 0;
@@ -22,12 +31,40 @@ public class GameController {
     private int currentFallSpeed;
     private int piecesPlaced = 0;
 
-    // Combo tracking
     private int consecutiveClears = 0;
     private int bestCombo = 0;
-
-    // Speed bonus tracking
     private long pieceSpawnTime = 0;
+
+    private static class GameSnapshot {
+        private final GameBoard.BoardState boardState;
+        private final Piece currentPiece;
+        private final List<Piece> queuedPieces;
+        private final boolean gameOver;
+        private final long lastFallTime;
+        private final long startTime;
+        private final int currentFallSpeed;
+        private final int piecesPlaced;
+        private final int consecutiveClears;
+        private final int bestCombo;
+        private final long pieceSpawnTime;
+
+        private GameSnapshot(GameBoard.BoardState boardState, Piece currentPiece,
+                             List<Piece> queuedPieces, boolean gameOver, long lastFallTime,
+                             long startTime, int currentFallSpeed, int piecesPlaced,
+                             int consecutiveClears, int bestCombo, long pieceSpawnTime) {
+            this.boardState = boardState;
+            this.currentPiece = currentPiece;
+            this.queuedPieces = queuedPieces;
+            this.gameOver = gameOver;
+            this.lastFallTime = lastFallTime;
+            this.startTime = startTime;
+            this.currentFallSpeed = currentFallSpeed;
+            this.piecesPlaced = piecesPlaced;
+            this.consecutiveClears = consecutiveClears;
+            this.bestCombo = bestCombo;
+            this.pieceSpawnTime = pieceSpawnTime;
+        }
+    }
 
     public GameController(Difficulty difficulty, GameMode gameMode) {
         this.difficulty = difficulty;
@@ -36,12 +73,13 @@ public class GameController {
         this.board.initializeWithRows(difficulty.getInitialRows());
         this.leaderboardManager = new LeaderboardManager();
         this.currentPiece = new Piece();
-        this.nextPiece = new Piece();
+        this.pieceQueue = new LinkedList<>();
+        this.moveHistory = new Stack<>();
+        fillPieceQueue();
         this.lastFallTime = System.currentTimeMillis();
         this.startTime = System.currentTimeMillis();
         this.pieceSpawnTime = System.currentTimeMillis();
 
-        // Initialize strategy based on mode
         switch (gameMode) {
             case MARATHON:
                 this.ruleStrategy = new MarathonRules();
@@ -60,22 +98,19 @@ public class GameController {
                 break;
         }
 
-        // Initialize strategy defaults
         this.ruleStrategy.onGameStart(this);
     }
 
     public void update() {
-        if (gameOver)
+        if (gameOver) {
             return;
+        }
 
-        // Delegate update logic to strategy
         long currentTime = System.currentTimeMillis();
         long elapsedTime = currentTime - startTime;
 
         ruleStrategy.update(this, elapsedTime);
 
-        // Handle auto-drop (gravity) logic here if strategy didn't handle it
-        // differently
         if (currentTime - lastFallTime >= currentFallSpeed) {
             dropPiece();
             lastFallTime = currentTime;
@@ -126,21 +161,23 @@ public class GameController {
             while (board.canPlace(currentPiece)) {
                 currentPiece.setY(testY);
                 if (isGoodPosition(currentPiece)) {
-                    bestPiece = currentPiece;
+                    bestPiece = new Piece(currentPiece);
                     bestY = testY;
                     break;
                 }
                 testY++;
             }
-            if (bestPiece != null)
+            if (bestPiece != null) {
                 break;
+            }
         }
 
         if (bestPiece != null) {
+            currentPiece = bestPiece;
             currentPiece.setY(bestY);
         } else {
             currentPiece.setY(originalY);
-            currentPiece.rotateClockwise(); // Rotate back to start + 1
+            currentPiece.rotateClockwise();
             if (!board.canPlace(currentPiece)) {
                 currentPiece.rotateCounterClockwise();
             }
@@ -155,15 +192,18 @@ public class GameController {
         currentPiece.moveDown();
         if (!board.canPlace(currentPiece)) {
             currentPiece.setY(currentPiece.getY() - 1);
-            board.placePiece(currentPiece);
-            piecesPlaced++;
-
-            handlePiecePlacement();
-
-            spawnNextPiece();
-
-            checkGameOverConditions();
+            lockCurrentPiece();
         }
+    }
+
+    private void lockCurrentPiece() {
+        saveMoveSnapshot();
+        board.placePiece(currentPiece);
+        piecesPlaced++;
+
+        handlePiecePlacement();
+        spawnNextPiece();
+        checkGameOverConditions();
     }
 
     private void handlePiecePlacement() {
@@ -171,24 +211,26 @@ public class GameController {
         long timeTaken = currentTime - pieceSpawnTime;
         int speedBonus = calculateSpeedBonus(timeTaken);
 
-        int rowsCleared = board.clearFullRows();
+        GameBoard.ClearResult clearResult = board.clearCompletedLinesAndGroups();
 
-        if (rowsCleared > 0) {
+        if (clearResult.hasClears()) {
             consecutiveClears++;
             if (consecutiveClears > bestCombo) {
                 bestCombo = consecutiveClears;
             }
             double comboMultiplier = 1.0 + (consecutiveClears - 1) * 0.5;
-            double chainMultiplier = GameBoard.getChainMultiplier(rowsCleared);
+            double chainMultiplier = GameBoard.getChainMultiplier(Math.max(1, clearResult.getScoreUnits()));
 
             int tSpinBonus = 0;
-            if (currentPiece.getType() == PieceType.T && currentPiece.wasRotated()) {
-                tSpinBonus = getTSpinBonus(rowsCleared);
+            if (clearResult.getRowsCleared() > 0
+                    && currentPiece.getType() == PieceType.T
+                    && currentPiece.wasRotated()) {
+                tSpinBonus = getTSpinBonus(clearResult.getRowsCleared());
             }
 
             ui.GameSettings settings = ui.GameSettings.getInstance();
             if (!settings.isPracticeMode()) {
-                board.calculateScore(rowsCleared, chainMultiplier, comboMultiplier,
+                board.calculateScore(clearResult, chainMultiplier, comboMultiplier,
                         speedBonus, tSpinBonus, consecutiveClears);
             } else {
                 board.resetScore();
@@ -199,15 +241,27 @@ public class GameController {
     }
 
     private void spawnNextPiece() {
+        currentPiece = pieceQueue.poll();
+        if (currentPiece == null) {
+            currentPiece = new Piece();
+        }
         currentPiece.resetRotationFlag();
-        currentPiece = nextPiece;
-        nextPiece = new Piece();
+        currentPiece.setX(3);
+        currentPiece.setY(0);
+        fillPieceQueue();
         pieceSpawnTime = System.currentTimeMillis();
     }
 
+    private void fillPieceQueue() {
+        while (pieceQueue.size() < NEXT_QUEUE_SIZE) {
+            pieceQueue.add(new Piece());
+        }
+    }
+
     private int calculateSpeedBonus(long timeTakenMs) {
-        if (timeTakenMs >= 1000)
+        if (timeTakenMs >= 1000) {
             return 0;
+        }
         return (int) ((1000 - timeTakenMs) / 100) * 100;
     }
 
@@ -225,27 +279,75 @@ public class GameController {
     }
 
     public void stepDown() {
-        // Delegated via dropPiece loop or manual control, strategy controls auto-drop
         if (!gameOver) {
             dropPiece();
         }
     }
 
     public void speedDrop() {
+        if (gameOver) {
+            return;
+        }
+
         while (board.canPlace(currentPiece)) {
             currentPiece.moveDown();
         }
         currentPiece.setY(currentPiece.getY() - 1);
-        board.placePiece(currentPiece);
-        piecesPlaced++;
+        lockCurrentPiece();
+    }
 
-        handlePiecePlacement();
-        spawnNextPiece();
-        checkGameOverConditions();
+    public boolean undoLastMove() {
+        if (moveHistory.isEmpty()) {
+            return false;
+        }
+
+        GameSnapshot snapshot = moveHistory.pop();
+        board.restoreState(snapshot.boardState);
+        currentPiece = new Piece(snapshot.currentPiece);
+        pieceQueue = new LinkedList<>();
+        for (Piece piece : snapshot.queuedPieces) {
+            pieceQueue.add(new Piece(piece));
+        }
+        fillPieceQueue();
+
+        gameOver = snapshot.gameOver;
+        lastFallTime = System.currentTimeMillis();
+        startTime = snapshot.startTime;
+        currentFallSpeed = snapshot.currentFallSpeed;
+        piecesPlaced = snapshot.piecesPlaced;
+        consecutiveClears = snapshot.consecutiveClears;
+        bestCombo = snapshot.bestCombo;
+        pieceSpawnTime = System.currentTimeMillis();
+        return true;
+    }
+
+    private void saveMoveSnapshot() {
+        if (moveHistory.size() >= MAX_UNDO_HISTORY) {
+            moveHistory.remove(0);
+        }
+        moveHistory.push(new GameSnapshot(
+                board.createState(),
+                new Piece(currentPiece),
+                copyQueuedPieces(),
+                gameOver,
+                lastFallTime,
+                startTime,
+                currentFallSpeed,
+                piecesPlaced,
+                consecutiveClears,
+                bestCombo,
+                pieceSpawnTime));
+    }
+
+    private List<Piece> copyQueuedPieces() {
+        List<Piece> copies = new ArrayList<>();
+        for (Piece piece : pieceQueue) {
+            copies.add(new Piece(piece));
+        }
+        return copies;
     }
 
     private void checkGameOverConditions() {
-        // Delegate to strategy
         if (ruleStrategy.isVictory(board)) {
             gameOver = true;
             return;
@@ -270,7 +372,13 @@ public class GameController {
     }
 
     public Piece getNextPiece() {
-        return nextPiece;
+        fillPieceQueue();
+        return pieceQueue.peek();
+    }
+
+    public List<Piece> getNextPieces() {
+        fillPieceQueue();
+        return copyQueuedPieces();
     }
 
     public int getScore() {
@@ -279,6 +387,14 @@ public class GameController {
 
     public boolean isGameOver() {
         return gameOver;
+    }
+
+    public boolean canUndo() {
+        return !moveHistory.isEmpty();
+    }
+
+    public int getUndoCount() {
+        return moveHistory.size();
     }
 
     public void saveScore(String playerName) {
@@ -299,6 +415,10 @@ public class GameController {
         return board.getTotalRowsCleared();
     }
 
+    public int getTotalGroupsCleared() {
+        return board.getTotalGroupsCleared();
+    }
+
     public long getElapsedTime() {
         return System.currentTimeMillis() - startTime;
     }
@@ -308,8 +428,9 @@ public class GameController {
     }
 
     public boolean isVictory() {
-        if (!gameOver)
+        if (!gameOver) {
             return false;
+        }
         return ruleStrategy.isVictory(board);
     }
 
@@ -329,7 +450,6 @@ public class GameController {
         return board.getLastScoreBreakdown();
     }
 
-    // Setters for Strategy to use
     public Difficulty getDifficulty() {
         return difficulty;
     }

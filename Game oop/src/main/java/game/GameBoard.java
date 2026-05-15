@@ -1,15 +1,110 @@
 package game;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Queue;
+
 public class GameBoard {
     private static final int WIDTH = 10;
     private static final int HEIGHT = 20;
+    private static final int EMPTY = 0;
+    private static final int MIN_CLUSTER_SIZE_TO_CLEAR = 5;
+
     private int[][] grid;
     private int score = 0;
     private int combo = 0;
-    private int totalRowsCleared = 0; // Tổng số hàng đã xóa (cho Sprint mode)
-    private ScoreBreakdown lastScoreBreakdown; // Breakdown điểm lần cuối
-    private java.util.List<Integer> lastClearedRows = new java.util.ArrayList<>();
+    private int totalRowsCleared = 0;
+    private int totalGroupsCleared = 0;
+    private ScoreBreakdown lastScoreBreakdown;
+    private List<Integer> lastClearedRows = new ArrayList<>();
+    private List<BoardCell> lastClearedCells = new ArrayList<>();
     private long lastClearTime = 0;
+
+    public static class BoardCell {
+        private final int row;
+        private final int col;
+
+        public BoardCell(int row, int col) {
+            this.row = row;
+            this.col = col;
+        }
+
+        public int getRow() {
+            return row;
+        }
+
+        public int getCol() {
+            return col;
+        }
+    }
+
+    public static class ClearResult {
+        private final int rowsCleared;
+        private final int groupsCleared;
+        private final int clusterCellsCleared;
+
+        public ClearResult(int rowsCleared, int groupsCleared, int clusterCellsCleared) {
+            this.rowsCleared = rowsCleared;
+            this.groupsCleared = groupsCleared;
+            this.clusterCellsCleared = clusterCellsCleared;
+        }
+
+        public int getRowsCleared() {
+            return rowsCleared;
+        }
+
+        public int getGroupsCleared() {
+            return groupsCleared;
+        }
+
+        public int getClusterCellsCleared() {
+            return clusterCellsCleared;
+        }
+
+        public boolean hasClears() {
+            return rowsCleared > 0 || clusterCellsCleared > 0;
+        }
+
+        public int getScoreUnits() {
+            int groupUnits = clusterCellsCleared > 0
+                    ? Math.max(1, (clusterCellsCleared + WIDTH - 1) / WIDTH)
+                    : 0;
+            return rowsCleared + groupUnits;
+        }
+    }
+
+    public static class BoardState {
+        private final int[][] grid;
+        private final int score;
+        private final int combo;
+        private final int totalRowsCleared;
+        private final int totalGroupsCleared;
+        private final ScoreBreakdown lastScoreBreakdown;
+        private final List<Integer> lastClearedRows;
+        private final List<BoardCell> lastClearedCells;
+        private final long lastClearTime;
+
+        private BoardState(int[][] grid, int score, int combo, int totalRowsCleared,
+                           int totalGroupsCleared, ScoreBreakdown lastScoreBreakdown,
+                           List<Integer> lastClearedRows, List<BoardCell> lastClearedCells,
+                           long lastClearTime) {
+            this.grid = grid;
+            this.score = score;
+            this.combo = combo;
+            this.totalRowsCleared = totalRowsCleared;
+            this.totalGroupsCleared = totalGroupsCleared;
+            this.lastScoreBreakdown = lastScoreBreakdown;
+            this.lastClearedRows = lastClearedRows;
+            this.lastClearedCells = lastClearedCells;
+            this.lastClearTime = lastClearTime;
+        }
+    }
+
+    private static class ClusterClearStats {
+        int groupsCleared;
+        int cellsCleared;
+    }
 
     public GameBoard() {
         grid = new int[HEIGHT][WIDTH];
@@ -29,7 +124,7 @@ public class GameBoard {
                     if (boardX < 0 || boardX >= WIDTH || boardY >= HEIGHT) {
                         return false;
                     }
-                    if (boardY >= 0 && grid[boardY][boardX] != 0) {
+                    if (boardY >= 0 && grid[boardY][boardX] != EMPTY) {
                         return false;
                     }
                 }
@@ -42,6 +137,7 @@ public class GameBoard {
         int[][] shape = piece.getShape();
         int pieceX = piece.getX();
         int pieceY = piece.getY();
+        int colorId = encodePieceType(piece.getType());
 
         for (int i = 0; i < shape.length; i++) {
             for (int j = 0; j < shape[i].length; j++) {
@@ -49,51 +145,129 @@ public class GameBoard {
                     int boardX = pieceX + j;
                     int boardY = pieceY + i;
                     if (boardY >= 0 && boardY < HEIGHT && boardX >= 0 && boardX < WIDTH) {
-                        grid[boardY][boardX] = 1;
+                        grid[boardY][boardX] = colorId;
                     }
                 }
             }
         }
     }
 
+    public ClearResult clearCompletedLinesAndGroups() {
+        lastClearedRows.clear();
+        lastClearedCells.clear();
+
+        int rowsClearedThisTurn = clearFullRowsInternal();
+        ClusterClearStats clusterStats = clearSameColorGroups();
+
+        if (rowsClearedThisTurn > 0 || clusterStats.cellsCleared > 0) {
+            totalRowsCleared += rowsClearedThisTurn;
+            totalGroupsCleared += clusterStats.groupsCleared;
+            combo = rowsClearedThisTurn + clusterStats.groupsCleared;
+            lastClearTime = System.currentTimeMillis();
+        } else {
+            combo = 0;
+        }
+
+        return new ClearResult(rowsClearedThisTurn, clusterStats.groupsCleared, clusterStats.cellsCleared);
+    }
+
     /**
-     * Xóa các hàng đầy và trả về số hàng đã xóa
-     * @return số hàng đã xóa (0 nếu không có hàng nào)
+     * Kept for older callers. New game flow uses clearCompletedLinesAndGroups().
      */
     public int clearFullRows() {
-        int rowsClearedThisTurn = 0;
-        // Tìm tất cả các hàng đầy trước
-        java.util.ArrayList<Integer> fullRows = new java.util.ArrayList<>();
-        lastClearedRows.clear();
+        return clearCompletedLinesAndGroups().getRowsCleared();
+    }
+
+    private int clearFullRowsInternal() {
+        ArrayList<Integer> fullRows = new ArrayList<>();
         for (int row = 0; row < HEIGHT; row++) {
             if (isRowFull(row)) {
                 fullRows.add(row);
             }
         }
-        
-        rowsClearedThisTurn = fullRows.size();
-        
-        // Xóa các hàng từ dưới lên để tránh vấn đề index
+
         for (int i = fullRows.size() - 1; i >= 0; i--) {
-            int row = fullRows.get(i);
-            removeRow(row);
+            removeRow(fullRows.get(i));
         }
 
-        if (rowsClearedThisTurn > 0) {
-            totalRowsCleared += rowsClearedThisTurn;
-            combo = rowsClearedThisTurn; // Lưu số hàng xóa cho multiplier
-            lastClearedRows.addAll(fullRows);
-            lastClearTime = System.currentTimeMillis();
-        } else {
-            combo = 0; // Reset combo nếu không xóa hàng
+        lastClearedRows.addAll(fullRows);
+        return fullRows.size();
+    }
+
+    private ClusterClearStats clearSameColorGroups() {
+        boolean[][] visited = new boolean[HEIGHT][WIDTH];
+        ClusterClearStats stats = new ClusterClearStats();
+
+        for (int row = 0; row < HEIGHT; row++) {
+            for (int col = 0; col < WIDTH; col++) {
+                int colorId = grid[row][col];
+                if (colorId == EMPTY || visited[row][col]) {
+                    continue;
+                }
+
+                List<BoardCell> cluster = findConnectedClusterWithBfs(row, col, colorId, visited);
+                if (cluster.size() >= MIN_CLUSTER_SIZE_TO_CLEAR) {
+                    lastClearedCells.addAll(cluster);
+                    stats.groupsCleared++;
+                    stats.cellsCleared += floodFillClear(row, col, colorId, new boolean[HEIGHT][WIDTH]);
+                }
+            }
         }
-        
-        return rowsClearedThisTurn;
+
+        return stats;
+    }
+
+    private List<BoardCell> findConnectedClusterWithBfs(int startRow, int startCol, int colorId,
+                                                        boolean[][] visited) {
+        List<BoardCell> cluster = new ArrayList<>();
+        Queue<BoardCell> queue = new ArrayDeque<>();
+        queue.add(new BoardCell(startRow, startCol));
+        visited[startRow][startCol] = true;
+
+        int[] dRow = {-1, 1, 0, 0};
+        int[] dCol = {0, 0, -1, 1};
+
+        while (!queue.isEmpty()) {
+            BoardCell cell = queue.poll();
+            cluster.add(cell);
+
+            for (int i = 0; i < dRow.length; i++) {
+                int nextRow = cell.getRow() + dRow[i];
+                int nextCol = cell.getCol() + dCol[i];
+                if (isInside(nextRow, nextCol)
+                        && !visited[nextRow][nextCol]
+                        && grid[nextRow][nextCol] == colorId) {
+                    visited[nextRow][nextCol] = true;
+                    queue.add(new BoardCell(nextRow, nextCol));
+                }
+            }
+        }
+
+        return cluster;
+    }
+
+    private int floodFillClear(int row, int col, int colorId, boolean[][] visited) {
+        if (!isInside(row, col) || visited[row][col] || grid[row][col] != colorId) {
+            return 0;
+        }
+
+        visited[row][col] = true;
+        grid[row][col] = EMPTY;
+
+        return 1
+                + floodFillClear(row - 1, col, colorId, visited)
+                + floodFillClear(row + 1, col, colorId, visited)
+                + floodFillClear(row, col - 1, colorId, visited)
+                + floodFillClear(row, col + 1, colorId, visited);
+    }
+
+    private boolean isInside(int row, int col) {
+        return row >= 0 && row < HEIGHT && col >= 0 && col < WIDTH;
     }
 
     private boolean isRowFull(int row) {
         for (int col = 0; col < WIDTH; col++) {
-            if (grid[row][col] == 0) {
+            if (grid[row][col] == EMPTY) {
                 return false;
             }
         }
@@ -107,75 +281,75 @@ public class GameBoard {
         grid[0] = new int[WIDTH];
     }
 
-    /**
-     * Tính điểm với các hệ số và bonus
-     * @param chainMultiplier hệ số chain (1.0, 1.5, 2.0, 3.0, 4.0)
-     * @param comboMultiplier hệ số combo (1.0 + (consecutiveClears - 1) * 0.5)
-     * @param speedBonus bonus tốc độ
-     * @param tSpinBonus bonus T-Spin
-     * @return ScoreBreakdown object
-     */
-    public ScoreBreakdown calculateScore(int rowsCleared, double chainMultiplier, 
-                                        double comboMultiplier, int speedBonus, 
-                                        int tSpinBonus, int consecutiveClears) {
-        // Base score = số ô trên hàng × số hàng xóa
-        int baseScore = WIDTH * rowsCleared;
-        
-        // Perfect Clear bonus
+    public ScoreBreakdown calculateScore(ClearResult clearResult, double chainMultiplier,
+                                         double comboMultiplier, int speedBonus,
+                                         int tSpinBonus, int consecutiveClears) {
+        int rowsCleared = clearResult.getRowsCleared();
+        int clusterCells = clearResult.getClusterCellsCleared();
+        int groupsCleared = clearResult.getGroupsCleared();
+        int baseScore = (WIDTH * rowsCleared) + (clusterCells * 2) + (groupsCleared * 25);
+
         int perfectClearBonus = 0;
         if (isPerfectClear()) {
             perfectClearBonus = 5000;
         }
-        
-        // Tính tổng điểm
-        int totalScore = (int)(baseScore * chainMultiplier * comboMultiplier) 
-                        + speedBonus + tSpinBonus + perfectClearBonus;
-        
+
+        int totalScore = (int) (baseScore * chainMultiplier * comboMultiplier)
+                + speedBonus + tSpinBonus + perfectClearBonus;
+
         score += totalScore;
-        
-        // Tạo breakdown
+
         lastScoreBreakdown = new ScoreBreakdown(baseScore, chainMultiplier, comboMultiplier,
-                                               speedBonus, tSpinBonus, perfectClearBonus, rowsCleared);
-        
+                speedBonus, tSpinBonus, perfectClearBonus, rowsCleared,
+                clusterCells, groupsCleared);
+
         return lastScoreBreakdown;
     }
-    
-    /**
-     * Kiểm tra Perfect Clear - toàn bộ bảng trống
-     */
+
+    public ScoreBreakdown calculateScore(int rowsCleared, double chainMultiplier,
+                                         double comboMultiplier, int speedBonus,
+                                         int tSpinBonus, int consecutiveClears) {
+        ClearResult clearResult = new ClearResult(rowsCleared, 0, 0);
+        return calculateScore(clearResult, chainMultiplier, comboMultiplier,
+                speedBonus, tSpinBonus, consecutiveClears);
+    }
+
     public boolean isPerfectClear() {
         for (int row = 0; row < HEIGHT; row++) {
             for (int col = 0; col < WIDTH; col++) {
-                if (grid[row][col] != 0) {
+                if (grid[row][col] != EMPTY) {
                     return false;
                 }
             }
         }
         return true;
     }
-    
-    /**
-     * Lấy chain multiplier dựa trên số hàng xóa
-     */
-    public static double getChainMultiplier(int rowsCleared) {
-        switch (rowsCleared) {
-            case 1: return 1.0;  // Single
-            case 2: return 1.5;  // Double
-            case 3: return 2.0;  // Triple
-            case 4: return 3.0;  // Tetris
-            default: return 4.0; // 5+ dòng
+
+    public static double getChainMultiplier(int clearUnits) {
+        switch (clearUnits) {
+            case 1:
+                return 1.0;
+            case 2:
+                return 1.5;
+            case 3:
+                return 2.0;
+            case 4:
+                return 3.0;
+            default:
+                return 4.0;
         }
     }
 
     public boolean isGameOver(Piece piece) {
-        piece.setY(0);
-        return !canPlace(piece);
+        Piece testPiece = new Piece(piece);
+        testPiece.setY(0);
+        return !canPlace(testPiece);
     }
 
     public int getScore() {
         return score;
     }
-    
+
     public void resetScore() {
         score = 0;
     }
@@ -187,17 +361,18 @@ public class GameBoard {
     public int getCombo() {
         return combo;
     }
-    
+
     public ScoreBreakdown getLastScoreBreakdown() {
         return lastScoreBreakdown;
     }
+
     public void initializeWithRows(int numRows) {
-        // Khởi tạo một số hàng ở dưới cùng với các ô ngẫu nhiên
+        PieceType[] pieceTypes = PieceType.values();
         for (int row = HEIGHT - numRows; row < HEIGHT; row++) {
             for (int col = 0; col < WIDTH; col++) {
-                // Tạo một số ô trống ngẫu nhiên để game vẫn có thể chơi được
-                if (Math.random() > 0.3) { // 70% ô được điền
-                    grid[row][col] = 1;
+                if (Math.random() > 0.3) {
+                    int randomPieceIndex = (int) (Math.random() * pieceTypes.length);
+                    grid[row][col] = randomPieceIndex + 1;
                 }
             }
         }
@@ -207,15 +382,67 @@ public class GameBoard {
         return totalRowsCleared;
     }
 
+    public int getTotalGroupsCleared() {
+        return totalGroupsCleared;
+    }
+
     public void resetRowsCleared() {
         totalRowsCleared = 0;
     }
 
-    public java.util.List<Integer> getLastClearedRows() {
+    public List<Integer> getLastClearedRows() {
         return lastClearedRows;
+    }
+
+    public List<BoardCell> getLastClearedCells() {
+        return lastClearedCells;
     }
 
     public long getLastClearTime() {
         return lastClearTime;
+    }
+
+    public PieceType getPieceTypeAt(int row, int col) {
+        if (!isInside(row, col) || grid[row][col] == EMPTY) {
+            return null;
+        }
+
+        int index = grid[row][col] - 1;
+        PieceType[] values = PieceType.values();
+        if (index < 0 || index >= values.length) {
+            return null;
+        }
+
+        return values[index];
+    }
+
+    public BoardState createState() {
+        return new BoardState(copyGrid(grid), score, combo, totalRowsCleared, totalGroupsCleared,
+                lastScoreBreakdown, new ArrayList<>(lastClearedRows),
+                new ArrayList<>(lastClearedCells), lastClearTime);
+    }
+
+    public void restoreState(BoardState state) {
+        grid = copyGrid(state.grid);
+        score = state.score;
+        combo = state.combo;
+        totalRowsCleared = state.totalRowsCleared;
+        totalGroupsCleared = state.totalGroupsCleared;
+        lastScoreBreakdown = state.lastScoreBreakdown;
+        lastClearedRows = new ArrayList<>(state.lastClearedRows);
+        lastClearedCells = new ArrayList<>(state.lastClearedCells);
+        lastClearTime = state.lastClearTime;
+    }
+
+    private int encodePieceType(PieceType type) {
+        return type.ordinal() + 1;
+    }
+
+    private static int[][] copyGrid(int[][] source) {
+        int[][] copy = new int[source.length][];
+        for (int i = 0; i < source.length; i++) {
+            copy[i] = source[i].clone();
+        }
+        return copy;
     }
 }

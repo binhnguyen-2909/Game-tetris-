@@ -30,6 +30,7 @@ public class GameScreen {
     private Text comboText;
     private Text scoreBreakdownText;
     private Text linesClearedText;
+    private Text groupsClearedText;
     private Text piecesPlacedText;
     private Text bestComboText;
     private Stage stage;
@@ -56,12 +57,14 @@ public class GameScreen {
     private int lastRowsCleared = 0;
     private long lastProcessedClearTime = 0;
     private java.util.List<RowClearEffect> rowClearEffects = new java.util.ArrayList<>();
+    private java.util.List<CellClearEffect> cellClearEffects = new java.util.ArrayList<>();
     private boolean isGameOverAnimating = false;
     private double gameOverProgress = 0.0;
 
     private static final int CELL_SIZE = 30;
     private static final int BOARD_WIDTH = 10;
     private static final int BOARD_HEIGHT = 20;
+    private static final int PREVIEW_SLOTS = 3;
 
     /**
      * Class để hiển thị điểm bay lên
@@ -98,6 +101,23 @@ public class GameScreen {
 
         boolean update(double deltaTime) {
             life -= deltaTime * 2.0; // 0.5 seconds duration
+            return life > 0;
+        }
+    }
+
+    private static class CellClearEffect {
+        int row;
+        int col;
+        double life;
+
+        CellClearEffect(int row, int col) {
+            this.row = row;
+            this.col = col;
+            this.life = 1.0;
+        }
+
+        boolean update(double deltaTime) {
+            life -= deltaTime * 2.5;
             return life > 0;
         }
     }
@@ -175,6 +195,10 @@ public class GameScreen {
         linesClearedText.setFont(Font.font("Arial", (int) (UIConstants.FONT_SMALL * textSizeMultiplier)));
         linesClearedText.setStyle("-fx-fill: " + currentTheme.colorToCss(currentTheme.getPrimaryTextColor()) + ";");
 
+        groupsClearedText = new Text("Groups Cleared: 0");
+        groupsClearedText.setFont(Font.font("Arial", (int) (UIConstants.FONT_SMALL * textSizeMultiplier)));
+        groupsClearedText.setStyle("-fx-fill: " + currentTheme.colorToCss(currentTheme.getPrimaryTextColor()) + ";");
+
         // Combo Counter (sử dụng comboText hiện tại nhưng format lại)
         comboText = new Text("Combo Counter: 0");
         comboText.setFont(Font.font("Arial", (int) (UIConstants.FONT_SMALL * textSizeMultiplier)));
@@ -201,6 +225,7 @@ public class GameScreen {
                 previewContainer,
                 scoreText,
                 linesClearedText,
+                groupsClearedText,
                 comboText,
                 piecesPlacedText,
                 bestComboText,
@@ -235,6 +260,11 @@ public class GameScreen {
 
         // Không xử lý input khi pause
         if (isPaused) {
+            return;
+        }
+
+        if (code == KeyCode.U) {
+            gameController.undoLastMove();
             return;
         }
 
@@ -332,6 +362,7 @@ public class GameScreen {
 
         // Cập nhật Lines Cleared
         linesClearedText.setText("Lines Cleared: " + gameController.getTotalRowsCleared());
+        groupsClearedText.setText("Groups Cleared: " + gameController.getTotalGroupsCleared());
 
         // Cập nhật Combo Counter
         int combo = gameController.getConsecutiveClears();
@@ -363,7 +394,9 @@ public class GameScreen {
             // đó)
             if (lastDisplayedBreakdown == null ||
                     breakdown.getTotalScore() != lastDisplayedBreakdown.getTotalScore() ||
-                    breakdown.getRowsCleared() != lastDisplayedBreakdown.getRowsCleared()) {
+                    breakdown.getRowsCleared() != lastDisplayedBreakdown.getRowsCleared() ||
+                    breakdown.getClusterCellsCleared() != lastDisplayedBreakdown.getClusterCellsCleared() ||
+                    breakdown.getGroupsCleared() != lastDisplayedBreakdown.getGroupsCleared()) {
                 // Breakdown mới - reset timer và lưu breakdown mới
                 lastBreakdownShowTime = currentTime;
                 lastDisplayedBreakdown = breakdown;
@@ -417,10 +450,10 @@ public class GameScreen {
                 if (grid[row][col] != 0) {
                     // Default color (TODO: lưu piece type để hiển thị đúng màu)
                     // Tạm dùng màu mặc định với colorblind support
-                    Color blockColor = currentTheme.getPieceColors()[2];
-                    if (settings.getColorblindMode() != GameSettings.ColorblindMode.NONE) {
-                        blockColor = currentTheme.getPieceColor(game.PieceType.T, settings.getColorblindMode());
-                    }
+                    game.PieceType pieceType = gameController.getBoard().getPieceTypeAt(row, col);
+                    Color blockColor = pieceType == null
+                            ? Color.WHITE
+                            : currentTheme.getPieceColor(pieceType, settings.getColorblindMode());
                     gc.setFill(blockColor);
                     int borderWidth = settings.isHighContrastMode() ? 0 : 1;
                     gc.fillRect(col * CELL_SIZE + borderWidth, row * CELL_SIZE + borderWidth,
@@ -448,6 +481,15 @@ public class GameScreen {
         }
 
         // Vẽ game over animation
+        if (!cellClearEffects.isEmpty()) {
+            for (CellClearEffect effect : cellClearEffects) {
+                gc.setFill(currentTheme.getComboGlowColor());
+                gc.setGlobalAlpha(effect.life * 0.75);
+                gc.fillRect(effect.col * CELL_SIZE, effect.row * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            }
+            gc.setGlobalAlpha(1.0);
+        }
+
         if (isGameOverAnimating || (gameController.isGameOver() && gameOverProgress >= 1.0)) {
             gc.setFill(Color.rgb(0, 0, 0, 0.7));
             double height = gameCanvas.getHeight() * gameOverProgress;
@@ -541,46 +583,60 @@ public class GameScreen {
 
     private void drawPreview() {
         GraphicsContext gc = previewCanvas.getGraphicsContext2D();
-        // Clear canvas (background is handled by container)
         gc.clearRect(0, 0, previewCanvas.getWidth(), previewCanvas.getHeight());
 
-        Piece nextPiece = gameController.getNextPiece();
-        int[][] shape = nextPiece.getShape();
+        java.util.List<Piece> nextPieces = gameController.getNextPieces();
         GameSettings settings = GameSettings.getInstance();
-        Color pieceColor = currentTheme.getPieceColor(nextPiece.getType(), settings.getColorblindMode());
-        gc.setFill(pieceColor);
 
-        // Calculate bounding box to center the piece visually
-        int minX = shape[0].length, maxX = 0;
-        int minY = shape.length, maxY = 0;
-        boolean found = false;
-
-        for (int i = 0; i < shape.length; i++) {
-            for (int j = 0; j < shape[i].length; j++) {
-                if (shape[i][j] == 1) {
-                    minX = Math.min(minX, j);
-                    maxX = Math.max(maxX, j);
-                    minY = Math.min(minY, i);
-                    maxY = Math.max(maxY, i);
-                    found = true;
-                }
-            }
+        int slotsToDraw = Math.min(PREVIEW_SLOTS, nextPieces.size());
+        if (slotsToDraw == 0) {
+            return;
         }
 
-        if (!found)
-            return;
+        double slotHeight = previewCanvas.getHeight() / PREVIEW_SLOTS;
+        double previewCellSize = Math.min(18, slotHeight / 3.2);
 
-        double pieceWidth = (maxX - minX + 1) * CELL_SIZE;
-        double pieceHeight = (maxY - minY + 1) * CELL_SIZE;
+        for (int slot = 0; slot < slotsToDraw; slot++) {
+            Piece nextPiece = nextPieces.get(slot);
+            int[][] shape = nextPiece.getShape();
+            Color pieceColor = currentTheme.getPieceColor(nextPiece.getType(), settings.getColorblindMode());
+            gc.setFill(pieceColor);
 
-        double startX = (previewCanvas.getWidth() - pieceWidth) / 2 - minX * CELL_SIZE;
-        double startY = (previewCanvas.getHeight() - pieceHeight) / 2 - minY * CELL_SIZE;
+            int minX = shape[0].length;
+            int maxX = 0;
+            int minY = shape.length;
+            int maxY = 0;
+            boolean found = false;
 
-        for (int i = 0; i < shape.length; i++) {
-            for (int j = 0; j < shape[i].length; j++) {
-                if (shape[i][j] == 1) {
-                    gc.fillRect(startX + j * CELL_SIZE + 1, startY + i * CELL_SIZE + 1,
-                            CELL_SIZE - 2, CELL_SIZE - 2);
+            for (int i = 0; i < shape.length; i++) {
+                for (int j = 0; j < shape[i].length; j++) {
+                    if (shape[i][j] == 1) {
+                        minX = Math.min(minX, j);
+                        maxX = Math.max(maxX, j);
+                        minY = Math.min(minY, i);
+                        maxY = Math.max(maxY, i);
+                        found = true;
+                    }
+                }
+            }
+
+            if (!found) {
+                continue;
+            }
+
+            double pieceWidth = (maxX - minX + 1) * previewCellSize;
+            double pieceHeight = (maxY - minY + 1) * previewCellSize;
+            double slotTop = slot * slotHeight;
+            double startX = (previewCanvas.getWidth() - pieceWidth) / 2 - minX * previewCellSize;
+            double startY = slotTop + (slotHeight - pieceHeight) / 2 - minY * previewCellSize;
+
+            for (int i = 0; i < shape.length; i++) {
+                for (int j = 0; j < shape[i].length; j++) {
+                    if (shape[i][j] == 1) {
+                        gc.fillRect(startX + j * previewCellSize + 1,
+                                startY + i * previewCellSize + 1,
+                                previewCellSize - 2, previewCellSize - 2);
+                    }
                 }
             }
         }
@@ -590,42 +646,56 @@ public class GameScreen {
      * Update animations
      */
     private void updateAnimations(double deltaTime) {
-        // Check for new row clears using timestamp
         long clearTime = gameController.getBoard().getLastClearTime();
         if (clearTime > lastProcessedClearTime) {
             lastProcessedClearTime = clearTime;
             java.util.List<Integer> clearedRows = gameController.getBoard().getLastClearedRows();
+            java.util.List<game.GameBoard.BoardCell> clearedCells = gameController.getBoard().getLastClearedCells();
 
             GameSettings settings = GameSettings.getInstance();
             if (!settings.isReduceMotion()) {
-                // Create effects for each cleared row
                 for (int row : clearedRows) {
                     rowClearEffects.add(new RowClearEffect(row));
 
-                    // Particles for this row
                     double centerY = (row + 0.5) * CELL_SIZE;
                     double centerX = BOARD_WIDTH * CELL_SIZE / 2.0;
                     Color effectColor = currentTheme.getComboGlowColor();
                     particleSystem.createRowClearExplosion(centerX, centerY, effectColor, 20);
                 }
 
-                // Floating score
+                for (game.GameBoard.BoardCell cell : clearedCells) {
+                    cellClearEffects.add(new CellClearEffect(cell.getRow(), cell.getCol()));
+                }
+
                 game.ScoreBreakdown breakdown = gameController.getLastScoreBreakdown();
                 if (breakdown != null) {
                     double centerX = BOARD_WIDTH * CELL_SIZE / 2.0;
-                    double centerY = (clearedRows.get(0) + 0.5) * CELL_SIZE; // Use top-most cleared row
+                    double centerY = BOARD_HEIGHT * CELL_SIZE / 2.0;
+                    if (!clearedRows.isEmpty()) {
+                        centerY = (clearedRows.get(0) + 0.5) * CELL_SIZE;
+                    } else if (!clearedCells.isEmpty()) {
+                        centerX = (clearedCells.get(0).getCol() + 0.5) * CELL_SIZE;
+                        centerY = (clearedCells.get(0).getRow() + 0.5) * CELL_SIZE;
+                    }
                     addFloatingScore(centerX, centerY, "+" + breakdown.getTotalScore(),
                             currentTheme.getAccentTextColor());
                 }
             }
         }
 
-        // Update row clear effects
         java.util.Iterator<RowClearEffect> it = rowClearEffects.iterator();
         while (it.hasNext()) {
             RowClearEffect effect = it.next();
             if (!effect.update(deltaTime)) {
                 it.remove();
+            }
+        }
+
+        java.util.Iterator<CellClearEffect> cellIt = cellClearEffects.iterator();
+        while (cellIt.hasNext()) {
+            CellClearEffect effect = cellIt.next();
+            if (!effect.update(deltaTime)) {
+                cellIt.remove();
             }
         }
     }

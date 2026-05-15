@@ -12,9 +12,18 @@ public class ScoreBreakdown {
     private int perfectClearBonus;
     private int totalScore;
     private int rowsCleared;
+    private int clusterCellsCleared;
+    private int groupsCleared;
     
     public ScoreBreakdown(int baseScore, double chainMultiplier, double comboMultiplier,
                          int speedBonus, int tSpinBonus, int perfectClearBonus, int rowsCleared) {
+        this(baseScore, chainMultiplier, comboMultiplier, speedBonus, tSpinBonus,
+             perfectClearBonus, rowsCleared, 0, 0);
+    }
+
+    public ScoreBreakdown(int baseScore, double chainMultiplier, double comboMultiplier,
+                         int speedBonus, int tSpinBonus, int perfectClearBonus,
+                         int rowsCleared, int clusterCellsCleared, int groupsCleared) {
         this.baseScore = baseScore;
         this.chainMultiplier = chainMultiplier;
         this.comboMultiplier = comboMultiplier;
@@ -22,6 +31,8 @@ public class ScoreBreakdown {
         this.tSpinBonus = tSpinBonus;
         this.perfectClearBonus = perfectClearBonus;
         this.rowsCleared = rowsCleared;
+        this.clusterCellsCleared = clusterCellsCleared;
+        this.groupsCleared = groupsCleared;
         
         // Tính tổng điểm
         this.totalScore = (int)(baseScore * chainMultiplier * comboMultiplier) 
@@ -59,6 +70,14 @@ public class ScoreBreakdown {
     public int getRowsCleared() {
         return rowsCleared;
     }
+
+    public int getClusterCellsCleared() {
+        return clusterCellsCleared;
+    }
+
+    public int getGroupsCleared() {
+        return groupsCleared;
+    }
     
     public String getDescription() {
         StringBuilder sb = new StringBuilder();
@@ -69,6 +88,10 @@ public class ScoreBreakdown {
             sb.append("├─ " + chainName + ": ×" + String.format("%.1f", chainMultiplier) + "\n");
         }
         
+        if (clusterCellsCleared > 0) {
+            sb.append("Groups: " + groupsCleared + " / Blocks: " + clusterCellsCleared + "\n");
+        }
+
         if (comboMultiplier > 1.0) {
             sb.append("├─ Combo: ×" + String.format("%.1f", comboMultiplier) + "\n");
         }

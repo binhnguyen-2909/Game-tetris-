@@ -1,147 +1,124 @@
 @echo off
-chcp 65001 >nul
-REM Script chạy Block Blast Game với Java 8 và JavaFX
+setlocal enabledelayedexpansion
 
 echo ========================================
 echo  Block Blast Game
 echo ========================================
 echo.
 
-REM Tìm javac
-SET JAVAC_FOUND=0
+REM -------- 1. Find javac --------
+set "JAVAC_FOUND=0"
 where javac >nul 2>&1
-IF %ERRORLEVEL% EQU 0 SET JAVAC_FOUND=1
+if %ERRORLEVEL% EQU 0 set "JAVAC_FOUND=1"
 
-REM Nếu không tìm thấy trong PATH, tìm trong các thư mục thông thường
-IF %JAVAC_FOUND% EQU 0 (
-    IF DEFINED JAVA_HOME (
-        IF EXIST "%JAVA_HOME%\bin\javac.exe" (
-            SET "PATH=%JAVA_HOME%\bin;%PATH%"
-            SET JAVAC_FOUND=1
+if !JAVAC_FOUND! EQU 0 (
+    if defined JAVA_HOME (
+        if exist "%JAVA_HOME%\bin\javac.exe" (
+            set "PATH=%JAVA_HOME%\bin;%PATH%"
+            set "JAVAC_FOUND=1"
         )
     )
 )
 
-IF %JAVAC_FOUND% EQU 0 (
-    FOR /D %%I IN ("C:\Program Files\Java\*") DO (
-        IF EXIST "%%I\bin\javac.exe" (
-            SET "PATH=%%I\bin;%PATH%"
-            SET JAVAC_FOUND=1
-            GOTO :javac_found
+if !JAVAC_FOUND! EQU 0 (
+    for /d %%I in ("C:\Program Files\Eclipse Adoptium\*") do (
+        if exist "%%I\bin\javac.exe" (
+            set "PATH=%%I\bin;%PATH%"
+            set "JAVAC_FOUND=1"
+            goto :javac_found
         )
     )
-    FOR /D %%I IN ("C:\Program Files (x86)\Java\*") DO (
-        IF EXIST "%%I\bin\javac.exe" (
-            SET "PATH=%%I\bin;%PATH%"
-            SET JAVAC_FOUND=1
-            GOTO :javac_found
+    for /d %%I in ("C:\Program Files\Java\*") do (
+        if exist "%%I\bin\javac.exe" (
+            set "PATH=%%I\bin;%PATH%"
+            set "JAVAC_FOUND=1"
+            goto :javac_found
         )
     )
 )
 
 :javac_found
-IF %JAVAC_FOUND% EQU 0 (
-    echo [ERROR] Khong tim thay javac!
-    echo Vui long cai dat JDK 8 truoc.
+if !JAVAC_FOUND! EQU 0 (
+    echo [ERROR] javac not found. Install JDK 11+.
     pause
     exit /b 1
 )
 
-REM Tìm JavaFX (jfxrt.jar) - Java 8 có JavaFX đi kèm
-SET JAVAFX_PATH=
+REM -------- 2. Find JavaFX SDK --------
+set "JAVAFX_LIB="
 
-REM Tìm từ JAVA_HOME
-IF DEFINED JAVA_HOME (
-    IF EXIST "%JAVA_HOME%\jre\lib\ext\jfxrt.jar" (
-        SET "JAVAFX_PATH=%JAVA_HOME%\jre\lib\ext\jfxrt.jar"
-        GOTO :found_javafx
-    )
-    IF EXIST "%JAVA_HOME%\lib\jfxrt.jar" (
-        SET "JAVAFX_PATH=%JAVA_HOME%\lib\jfxrt.jar"
-        GOTO :found_javafx
-    )
+if defined JAVAFX_HOME (
+    if exist "%JAVAFX_HOME%\lib\javafx.controls.jar" set "JAVAFX_LIB=%JAVAFX_HOME%\lib"
 )
 
-REM Tìm trong Program Files\Java
-FOR /D %%I IN ("C:\Program Files\Java\*") DO (
-    IF EXIST "%%I\jre\lib\ext\jfxrt.jar" (
-        SET "JAVAFX_PATH=%%I\jre\lib\ext\jfxrt.jar"
-        GOTO :found_javafx
-    )
-    IF EXIST "%%I\lib\ext\jfxrt.jar" (
-        SET "JAVAFX_PATH=%%I\lib\ext\jfxrt.jar"
-        GOTO :found_javafx
-    )
-    IF EXIST "%%I\lib\jfxrt.jar" (
-        SET "JAVAFX_PATH=%%I\lib\jfxrt.jar"
-        GOTO :found_javafx
-    )
-)
-
-REM Tìm từ đường dẫn javac
-FOR /F "tokens=*" %%I IN ('where javac') DO (
-    SET "JAVAC_PATH=%%I"
-    FOR %%J IN ("%%~dI%%~pI..") DO (
-        IF EXIST "%%J\jre\lib\ext\jfxrt.jar" (
-            SET "JAVAFX_PATH=%%J\jre\lib\ext\jfxrt.jar"
-            GOTO :found_javafx
+if "!JAVAFX_LIB!"=="" (
+    for /d %%I in ("C:\javafx-sdk*") do (
+        if exist "%%I\lib\javafx.controls.jar" (
+            set "JAVAFX_LIB=%%I\lib"
+            goto :found_javafx
         )
-        IF EXIST "%%J\lib\jfxrt.jar" (
-            SET "JAVAFX_PATH=%%J\lib\jfxrt.jar"
-            GOTO :found_javafx
+    )
+)
+if "!JAVAFX_LIB!"=="" (
+    for /d %%I in ("C:\Program Files\javafx-sdk*") do (
+        if exist "%%I\lib\javafx.controls.jar" (
+            set "JAVAFX_LIB=%%I\lib"
+            goto :found_javafx
+        )
+    )
+)
+if "!JAVAFX_LIB!"=="" (
+    for /d %%I in ("%USERPROFILE%\Downloads\javafx-sdk*") do (
+        if exist "%%I\lib\javafx.controls.jar" (
+            set "JAVAFX_LIB=%%I\lib"
+            goto :found_javafx
         )
     )
 )
 
 :found_javafx
-IF "%JAVAFX_PATH%"=="" (
-    echo [WARNING] Khong tim thay jfxrt.jar
-    echo Dang thu bien dich khong can JavaFX...
-    SET "JAVAFX_CLASSPATH="
-) ELSE (
-    echo [OK] Tim thay JavaFX tai: %JAVAFX_PATH%
-)
-
-echo.
-echo ========================================
-echo  Dang bien dich game...
-echo ========================================
-
-IF "%JAVAFX_PATH%"=="" (
-    javac -d . -encoding UTF-8 src/main/java/game/*.java src/main/java/game/rules/*.java src/main/java/ui/*.java src/main/java/utils/*.java
-) ELSE (
-    javac -d . -encoding UTF-8 -cp "%JAVAFX_PATH%" src/main/java/game/*.java src/main/java/game/rules/*.java src/main/java/ui/*.java src/main/java/utils/*.java
-)
-
-IF %ERRORLEVEL% NEQ 0 (
-    echo.
-    echo [ERROR] Bien dich that bai!
-    echo.
-    echo Neu gap loi "package javafx does not exist", ban can:
-    echo 1. Tai JavaFX SDK: https://openjfx.io/
-    echo 2. Hoac su dung JDK 8 co JavaFX di kem
+if "!JAVAFX_LIB!"=="" (
+    echo [ERROR] JavaFX SDK not found.
+    echo Download from https://gluonhq.com/products/javafx/
+    echo and extract to C:\javafx-sdk-21 or set JAVAFX_HOME.
     pause
     exit /b 1
 )
 
-echo [OK] Bien dich thanh cong!
+echo [OK] javac :
+where javac
+echo [OK] JavaFX: !JAVAFX_LIB!
 echo.
+
+REM -------- 3. Compile --------
 echo ========================================
-echo  Dang chay game...
+echo  Compiling...
 echo ========================================
 
-IF "%JAVAFX_PATH%"=="" (
-    java game.BlockBlastGame
-) ELSE (
-    java -cp .;"%JAVAFX_PATH%" game.BlockBlastGame
-)
+set "SOURCES=src\main\java\game\*.java src\main\java\game\rules\*.java src\main\java\ui\*.java src\main\java\utils\*.java"
 
-IF %ERRORLEVEL% NEQ 0 (
+javac --module-path "!JAVAFX_LIB!" --add-modules javafx.controls,javafx.fxml -d . -encoding UTF-8 %SOURCES%
+if !ERRORLEVEL! NEQ 0 (
     echo.
-    echo [ERROR] Chay game that bai!
+    echo [ERROR] Compilation failed.
+    pause
+    exit /b 1
+)
+echo [OK] Compiled successfully.
+echo.
+
+REM -------- 4. Run --------
+echo ========================================
+echo  Running game...
+echo ========================================
+
+java --module-path "!JAVAFX_LIB!" --add-modules javafx.controls,javafx.fxml -cp . game.BlockBlastGame
+if !ERRORLEVEL! NEQ 0 (
+    echo.
+    echo [ERROR] Game failed to run.
     pause
     exit /b 1
 )
 
 pause
-
+endlocal
