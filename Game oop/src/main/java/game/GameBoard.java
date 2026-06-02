@@ -10,6 +10,9 @@ public class GameBoard {
     private static final int HEIGHT = 20;
     private static final int EMPTY = 0;
     private static final int MIN_CLUSTER_SIZE_TO_CLEAR = 5;
+    // Column where new pieces spawn (matches Piece's default x and
+    // GameController.spawnNextPiece). Used by the block-out / game-over test.
+    private static final int SPAWN_COLUMN = 3;
 
     private int[][] grid;
     private int score = 0;
@@ -186,7 +189,10 @@ public class GameBoard {
             }
         }
 
-        for (int i = fullRows.size() - 1; i >= 0; i--) {
+        // Remove top-most full row first. removeRow() only shifts rows ABOVE the
+        // removed row, so the indices of the remaining (lower) full rows stay valid.
+        // Iterating bottom-to-top would invalidate those indices and clear the wrong rows.
+        for (int i = 0; i < fullRows.size(); i++) {
             removeRow(fullRows.get(i));
         }
 
@@ -341,7 +347,12 @@ public class GameBoard {
     }
 
     public boolean isGameOver(Piece piece) {
+        // Block-out test: a piece can no longer enter the board at the SPAWN cell.
+        // Reset BOTH x and y to the spawn position so the result does not depend on
+        // where the player has slid the live piece -- otherwise moving the active
+        // piece under a topped-out column would falsely end the game.
         Piece testPiece = new Piece(piece);
+        testPiece.setX(SPAWN_COLUMN);
         testPiece.setY(0);
         return !canPlace(testPiece);
     }

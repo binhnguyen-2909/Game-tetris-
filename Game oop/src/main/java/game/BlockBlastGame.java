@@ -9,7 +9,6 @@ import ui.DifficultyScreen;
 import ui.GameScreen;
 import ui.GameOverScreen;
 import ui.LeaderboardScreen;
-import ui.SettingsScreen;
 import ui.SettingsScreenExtended;
 import ui.PauseScreen;
 import utils.LeaderboardManager;

@@ -9,16 +9,19 @@ import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
+import javafx.geometry.Pos;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
+import javafx.scene.paint.CycleMethod;
+import javafx.scene.paint.LinearGradient;
+import javafx.scene.paint.Stop;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
 import javafx.stage.Stage;
 import javafx.application.Platform;
-import ui.UIConstants;
 
 public class GameScreen {
     private GameController gameController;
@@ -61,7 +64,7 @@ public class GameScreen {
     private boolean isGameOverAnimating = false;
     private double gameOverProgress = 0.0;
 
-    private static final int CELL_SIZE = 30;
+    private static final int CELL_SIZE = 26;
     private static final int BOARD_WIDTH = 10;
     private static final int BOARD_HEIGHT = 20;
     private static final int PREVIEW_SLOTS = 3;
@@ -144,19 +147,29 @@ public class GameScreen {
 
     public Scene createScene() {
         BorderPane root = new BorderPane();
-        String bgColor = currentTheme.colorToCss(currentTheme.getBackgroundColor());
-        root.setStyle("-fx-background-color: " + bgColor + ";");
+        UIStyle.applyScreenBackground(root, currentTheme);
 
-        // Vùng trái: Canvas chơi game
+        // Vùng giữa: Canvas chơi game, đặt trong một khung bo góc có đổ bóng
         gameCanvas = new Canvas(BOARD_WIDTH * CELL_SIZE, BOARD_HEIGHT * CELL_SIZE);
-        gameCanvas.setStyle("-fx-border-color: #00ff00; -fx-border-width: 2;");
+        StackPane boardFrame = new StackPane(gameCanvas);
+        boardFrame.setPadding(new Insets(12));
+        boardFrame.setMaxSize(BOARD_WIDTH * CELL_SIZE + 24, BOARD_HEIGHT * CELL_SIZE + 24);
+        boardFrame.setStyle(
+                "-fx-background-color: " + UIStyle.rgba(currentTheme.getBoardBackgroundColor(), 0.95) + ";"
+                        + "-fx-background-radius: 14;"
+                        + "-fx-border-color: " + UIStyle.rgba(currentTheme.getAccentTextColor(), 0.75) + ";"
+                        + "-fx-border-radius: 14; -fx-border-width: 2;"
+                        + "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.55), 22, 0.15, 0, 8);");
+        StackPane boardArea = new StackPane(boardFrame);
+        boardArea.setPadding(new Insets(UIConstants.SPACING_MEDIUM));
 
-        // Vùng phải
+        // Vùng phải: bảng thông tin dạng "card"
         VBox rightPanel = new VBox(UIConstants.SPACING_SMALL);
-        rightPanel.setPadding(new Insets(UIConstants.SPACING_SMALL));
-        String panelBgColor = currentTheme.colorToCss(
-                currentTheme.getBackgroundColor().interpolate(currentTheme.getBoardBackgroundColor(), 0.5));
-        rightPanel.setStyle("-fx-background-color: " + panelBgColor + ";");
+        rightPanel.setPadding(new Insets(UIConstants.SPACING_MEDIUM));
+        rightPanel.setPrefWidth(300);
+        rightPanel.setStyle(UIStyle.cardCss(currentTheme));
+        BorderPane.setMargin(rightPanel, new Insets(UIConstants.SPACING_MEDIUM,
+                UIConstants.SPACING_MEDIUM, UIConstants.SPACING_MEDIUM, 0));
 
         // Preview piece
         previewCanvas = new Canvas(5 * CELL_SIZE, 5 * CELL_SIZE);
@@ -232,7 +245,7 @@ public class GameScreen {
                 timeText,
                 scoreBreakdownText);
 
-        root.setLeft(gameCanvas);
+        root.setCenter(boardArea);
         root.setRight(rightPanel);
 
         Scene scene = new Scene(root, UIConstants.WINDOW_WIDTH, UIConstants.WINDOW_HEIGHT);
@@ -332,21 +345,21 @@ public class GameScreen {
     private void updateUI(double deltaTime) {
         GameSettings settings = GameSettings.getInstance();
 
-        // Update animations (skip if reduce motion)
+        // Cập nhật trạng thái animation TRƯỚC khi vẽ (chưa vẽ gì ở đây).
         if (!settings.isReduceMotion()) {
             updateAnimations(deltaTime);
             updateFloatingScores(deltaTime);
-            particleSystem.updateAndDraw(gameCanvas.getGraphicsContext2D(), deltaTime);
         }
 
-        // Vẽ game board
+        // Vẽ game board (lấp nền canvas) -> sau đó mới vẽ hiệu ứng đè LÊN TRÊN.
         drawBoard();
 
         // Vẽ preview
         drawPreview();
 
-        // Vẽ floating scores (skip if reduce motion)
+        // Vẽ particle + floating scores SAU board, nếu không thì board sẽ xoá chúng.
         if (!settings.isReduceMotion()) {
+            particleSystem.updateAndDraw(gameCanvas.getGraphicsContext2D(), deltaTime);
             drawFloatingScores();
         }
 
@@ -405,7 +418,9 @@ public class GameScreen {
             // Hiển thị breakdown nếu chưa hết thời gian
             if (currentTime - lastBreakdownShowTime < BREAKDOWN_DISPLAY_DURATION) {
                 scoreBreakdownText.setText(breakdown.getDescription());
-                scoreBreakdownText.setStyle("-fx-fill: #00ff00;");
+                // Dùng màu nhấn của theme thay vì xanh lá cố định để hợp mọi theme.
+                scoreBreakdownText.setStyle("-fx-fill: "
+                        + currentTheme.colorToCss(currentTheme.getComboGlowColor()) + ";");
             } else {
                 scoreBreakdownText.setText("");
             }
@@ -420,44 +435,51 @@ public class GameScreen {
     private void drawBoard() {
         GraphicsContext gc = gameCanvas.getGraphicsContext2D();
 
-        // Background với theme color
+        double cw = gameCanvas.getWidth();
+        double ch = gameCanvas.getHeight();
+
+        // Nền bảng: gradient dọc nhẹ để tạo chiều sâu
         Color bgColor = currentTheme.getBoardBackgroundColor();
-        gc.setFill(bgColor);
-        gc.fillRect(0, 0, gameCanvas.getWidth(), gameCanvas.getHeight());
+        GameSettings settings = GameSettings.getInstance();
+        if (settings.isHighContrastMode()) {
+            gc.setFill(bgColor);
+        } else {
+            gc.setFill(new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE,
+                    new Stop(0, UIStyle.lighten(bgColor, 0.05)),
+                    new Stop(1, UIStyle.darken(bgColor, 0.12))));
+        }
+        gc.fillRect(0, 0, cw, ch);
 
         int[][] grid = gameController.getBoard().getGrid();
 
-        // Vẽ grid với theme color (có high contrast support)
-        GameSettings settings = GameSettings.getInstance();
+        // Lưới mờ, theo theme (đậm hơn khi bật high contrast)
         Color gridColor = currentTheme.getGridColor();
         if (settings.isHighContrastMode()) {
-            // Tăng contrast của grid
             gridColor = gridColor.interpolate(Color.WHITE, 0.5);
+            gc.setGlobalAlpha(1.0);
+        } else {
+            gc.setGlobalAlpha(0.35);
         }
         gc.setStroke(gridColor);
         gc.setLineWidth(settings.isHighContrastMode() ? 1.0 : 0.5);
         for (int i = 0; i <= BOARD_WIDTH; i++) {
-            gc.strokeLine(i * CELL_SIZE, 0, i * CELL_SIZE, gameCanvas.getHeight());
+            gc.strokeLine(i * CELL_SIZE, 0, i * CELL_SIZE, ch);
         }
         for (int i = 0; i <= BOARD_HEIGHT; i++) {
-            gc.strokeLine(0, i * CELL_SIZE, gameCanvas.getWidth(), i * CELL_SIZE);
+            gc.strokeLine(0, i * CELL_SIZE, cw, i * CELL_SIZE);
         }
+        gc.setGlobalAlpha(1.0);
 
-        // Vẽ các ô đã được đặt với màu từ theme
-        // TODO: Lưu màu của từng piece khi đặt để hiển thị đúng màu
+        // Vẽ các ô đã đặt: mỗi ô là một "khối" bo góc, có gradient + bevel + gloss.
         for (int row = 0; row < BOARD_HEIGHT; row++) {
             for (int col = 0; col < BOARD_WIDTH; col++) {
                 if (grid[row][col] != 0) {
-                    // Default color (TODO: lưu piece type để hiển thị đúng màu)
-                    // Tạm dùng màu mặc định với colorblind support
                     game.PieceType pieceType = gameController.getBoard().getPieceTypeAt(row, col);
                     Color blockColor = pieceType == null
                             ? Color.WHITE
                             : currentTheme.getPieceColor(pieceType, settings.getColorblindMode());
-                    gc.setFill(blockColor);
-                    int borderWidth = settings.isHighContrastMode() ? 0 : 1;
-                    gc.fillRect(col * CELL_SIZE + borderWidth, row * CELL_SIZE + borderWidth,
-                            CELL_SIZE - borderWidth * 2, CELL_SIZE - borderWidth * 2);
+                    drawBlock(gc, col * CELL_SIZE, row * CELL_SIZE, CELL_SIZE, blockColor, 1.0,
+                            settings.isHighContrastMode());
                 }
             }
         }
@@ -491,16 +513,25 @@ public class GameScreen {
         }
 
         if (isGameOverAnimating || (gameController.isGameOver() && gameOverProgress >= 1.0)) {
-            gc.setFill(Color.rgb(0, 0, 0, 0.7));
-            double height = gameCanvas.getHeight() * gameOverProgress;
-            gc.fillRect(0, gameCanvas.getHeight() - height, gameCanvas.getWidth(), height);
+            double overlay = Math.min(1.0, gameOverProgress);
+            gc.setFill(Color.rgb(0, 0, 0, 0.72));
+            double height = ch * overlay;
+            gc.fillRect(0, ch - height, cw, height);
 
             if (gameOverProgress >= 1.0) {
-                gc.setFill(Color.WHITE);
-                gc.setFont(Font.font("Arial", FontWeight.BOLD, 30));
-                gc.fillText("GAME OVER",
-                        gameCanvas.getWidth() / 2 - 90,
-                        gameCanvas.getHeight() / 2);
+                boolean victory = gameController.isVictory();
+                Color titleColor = victory ? Color.rgb(80, 230, 120) : Color.rgb(255, 90, 90);
+                String msg = victory ? "CHIẾN THẮNG!" : "GAME OVER";
+                gc.setTextAlign(javafx.scene.text.TextAlignment.CENTER);
+                gc.setFont(Font.font("Arial", FontWeight.BOLD, 28));
+                gc.setFill(Color.rgb(0, 0, 0, 0.6));
+                gc.fillText(msg, cw / 2 + 2, ch / 2 + 2); // bóng chữ
+                gc.setFill(titleColor);
+                gc.fillText(msg, cw / 2, ch / 2);
+                gc.setFont(Font.font("Arial", 14));
+                gc.setFill(Color.rgb(220, 220, 220));
+                gc.fillText("Điểm: " + gameController.getScore(), cw / 2, ch / 2 + 28);
+                gc.setTextAlign(javafx.scene.text.TextAlignment.LEFT);
             }
         }
     }
@@ -509,43 +540,44 @@ public class GameScreen {
      * Vẽ ghost piece (bóng của viên gạch sẽ rơi xuống)
      */
     private void drawGhostPiece(GraphicsContext gc, Piece piece) {
-        // Tính vị trí rơi xuống bằng cách simulate
-        int ghostX = piece.getX();
-        int ghostY = piece.getY();
-
-        // Tạo một piece tạm để test (không modify piece gốc)
-        // Vì không có copy constructor, ta sẽ simulate bằng cách test từng vị trí
+        // Tính vị trí rơi xuống trên một BẢN SAO, không đụng tới piece gốc
+        // (drawGhostPiece chạy trong vòng vẽ; mutate state game ở đây rất dễ sinh lỗi).
+        Piece probe = new Piece(piece);
         int testY = piece.getY();
         while (true) {
-            // Test xem có thể đặt piece ở vị trí này không
-            piece.setY(testY);
-            if (!gameController.getBoard().canPlace(piece)) {
+            probe.setY(testY);
+            if (!gameController.getBoard().canPlace(probe)) {
                 break;
             }
             testY++;
         }
         testY--; // Quay lại vị trí cuối cùng có thể đặt
-        piece.setY(ghostY); // Restore original position
 
         // Chỉ vẽ nếu ghost piece ở vị trí khác với piece hiện tại
         if (testY <= piece.getY()) {
             return; // Không cần vẽ nếu ghost ở cùng vị trí
         }
 
-        // Vẽ ghost piece với màu trong suốt
-        Color ghostColor = currentTheme.getGhostPieceColor();
+        // Ghost piece: khối bo góc trong suốt + viền sáng, nhuộm theo màu viên hiện tại
+        GameSettings settings = GameSettings.getInstance();
+        Color pieceColor = currentTheme.getPieceColor(piece.getType(), settings.getColorblindMode());
         int[][] shape = piece.getShape();
-        gc.setGlobalAlpha(ghostColor.getOpacity());
-        gc.setStroke(ghostColor);
-        gc.setLineWidth(2);
+        double gap = Math.max(1.0, CELL_SIZE * 0.06);
+        double s = CELL_SIZE - gap * 2;
+        double arc = s * 0.30;
 
         for (int i = 0; i < shape.length; i++) {
             for (int j = 0; j < shape[i].length; j++) {
                 if (shape[i][j] == 1) {
-                    int x = (piece.getX() + j) * CELL_SIZE;
-                    int y = (testY + i) * CELL_SIZE;
-                    // Vẽ outline
-                    gc.strokeRect(x + 2, y + 2, CELL_SIZE - 4, CELL_SIZE - 4);
+                    double x = (piece.getX() + j) * CELL_SIZE + gap;
+                    double y = (testY + i) * CELL_SIZE + gap;
+                    gc.setGlobalAlpha(0.18);
+                    gc.setFill(pieceColor);
+                    gc.fillRoundRect(x, y, s, s, arc, arc);
+                    gc.setGlobalAlpha(0.55);
+                    gc.setStroke(UIStyle.lighten(pieceColor, 0.2));
+                    gc.setLineWidth(1.5);
+                    gc.strokeRoundRect(x, y, s, s, arc, arc);
                 }
             }
         }
@@ -555,30 +587,66 @@ public class GameScreen {
     private void drawPiece(GraphicsContext gc, Piece piece, Color color) {
         GameSettings settings = GameSettings.getInstance();
         int[][] shape = piece.getShape();
-        gc.setFill(color);
-        gc.setGlobalAlpha(1.0);
-
-        int borderWidth = settings.isHighContrastMode() ? 0 : 1;
-
+        boolean hc = settings.isHighContrastMode();
         for (int i = 0; i < shape.length; i++) {
             for (int j = 0; j < shape[i].length; j++) {
                 if (shape[i][j] == 1) {
-                    int x = (piece.getX() + j) * CELL_SIZE;
-                    int y = (piece.getY() + i) * CELL_SIZE;
-                    // Vẽ với border nhẹ để trông đẹp hơn (trừ khi high contrast)
-                    gc.fillRect(x + borderWidth, y + borderWidth, CELL_SIZE - borderWidth * 2,
-                            CELL_SIZE - borderWidth * 2);
-                    // Highlight (skip nếu high contrast hoặc reduce motion)
-                    if (!settings.isHighContrastMode() && !settings.isReduceMotion()) {
-                        Color lighter = color.interpolate(Color.WHITE, 0.3);
-                        gc.setFill(lighter);
-                        gc.fillRect(x + borderWidth, y + borderWidth, CELL_SIZE - borderWidth * 2,
-                                (CELL_SIZE - borderWidth * 2) / 3);
-                        gc.setFill(color);
-                    }
+                    double x = (piece.getX() + j) * CELL_SIZE;
+                    double y = (piece.getY() + i) * CELL_SIZE;
+                    drawBlock(gc, x, y, CELL_SIZE, color, 1.0, hc);
                 }
             }
         }
+    }
+
+    /**
+     * Vẽ một "khối" gạch đẹp: bo góc, gradient dọc (sáng trên -> tối dưới),
+     * dải gloss sáng phía trên và viền trong tối để tách các khối.
+     * highContrast = true -> vẽ phẳng + viền trắng rõ để đảm bảo tương phản.
+     */
+    private void drawBlock(GraphicsContext gc, double px, double py, double size,
+                           Color color, double alpha, boolean highContrast) {
+        gc.setGlobalAlpha(alpha);
+        if (highContrast) {
+            gc.setFill(color);
+            gc.fillRect(px, py, size, size);
+            gc.setStroke(Color.WHITE);
+            gc.setLineWidth(1.0);
+            gc.strokeRect(px + 0.5, py + 0.5, size - 1, size - 1);
+            gc.setGlobalAlpha(1.0);
+            return;
+        }
+
+        double gap = Math.max(1.0, size * 0.06);
+        double x = px + gap;
+        double y = py + gap;
+        double s = size - gap * 2;
+        if (s <= 0) { // ô quá nhỏ -> vẽ phẳng cho an toàn
+            gc.setFill(color);
+            gc.fillRect(px, py, size, size);
+            gc.setGlobalAlpha(1.0);
+            return;
+        }
+        double arc = s * 0.30;
+
+        // Thân khối: gradient sáng (trên) -> màu gốc -> tối (dưới)
+        LinearGradient body = new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE,
+                new Stop(0, UIStyle.lighten(color, 0.32)),
+                new Stop(0.5, color),
+                new Stop(1, UIStyle.darken(color, 0.30)));
+        gc.setFill(body);
+        gc.fillRoundRect(x, y, s, s, arc, arc);
+
+        // Gloss: dải sáng mờ phía trên cho cảm giác bóng
+        gc.setFill(Color.color(1, 1, 1, 0.22));
+        gc.fillRoundRect(x + s * 0.12, y + s * 0.10, s * 0.76, s * 0.30, arc * 0.6, arc * 0.6);
+
+        // Viền trong tối để tách các khối liền kề
+        gc.setStroke(UIStyle.darken(color, 0.45));
+        gc.setLineWidth(Math.max(1.0, size * 0.04));
+        gc.strokeRoundRect(x, y, s, s, arc, arc);
+
+        gc.setGlobalAlpha(1.0);
     }
 
     private void drawPreview() {
@@ -630,12 +698,12 @@ public class GameScreen {
             double startX = (previewCanvas.getWidth() - pieceWidth) / 2 - minX * previewCellSize;
             double startY = slotTop + (slotHeight - pieceHeight) / 2 - minY * previewCellSize;
 
+            boolean hc = settings.isHighContrastMode();
             for (int i = 0; i < shape.length; i++) {
                 for (int j = 0; j < shape[i].length; j++) {
                     if (shape[i][j] == 1) {
-                        gc.fillRect(startX + j * previewCellSize + 1,
-                                startY + i * previewCellSize + 1,
-                                previewCellSize - 2, previewCellSize - 2);
+                        drawBlock(gc, startX + j * previewCellSize, startY + i * previewCellSize,
+                                previewCellSize, pieceColor, 1.0, hc);
                     }
                 }
             }

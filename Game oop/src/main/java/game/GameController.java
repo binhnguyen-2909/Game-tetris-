@@ -5,11 +5,12 @@ import game.rules.GameRuleStrategy;
 import game.rules.MarathonRules;
 import game.rules.SprintRules;
 import game.rules.ZenRules;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
-import java.util.Stack;
 import utils.GameScore;
 import utils.LeaderboardManager;
 
@@ -20,7 +21,10 @@ public class GameController {
     private GameBoard board;
     private Piece currentPiece;
     private Queue<Piece> pieceQueue;
-    private Stack<GameSnapshot> moveHistory;
+    // LIFO undo history. ArrayDeque-as-stack: push()/pop() at the head are O(1),
+    // and removeLast() drops the OLDEST snapshot in O(1) when the cap is hit
+    // (java.util.Stack would need remove(0), an O(n) Vector shift).
+    private Deque<GameSnapshot> moveHistory;
     private Difficulty difficulty;
     private GameMode gameMode;
     private GameRuleStrategy ruleStrategy;
@@ -74,7 +78,7 @@ public class GameController {
         this.leaderboardManager = new LeaderboardManager();
         this.currentPiece = new Piece();
         this.pieceQueue = new LinkedList<>();
-        this.moveHistory = new Stack<>();
+        this.moveHistory = new ArrayDeque<>();
         fillPieceQueue();
         this.lastFallTime = System.currentTimeMillis();
         this.startTime = System.currentTimeMillis();
@@ -323,7 +327,7 @@ public class GameController {
 
     private void saveMoveSnapshot() {
         if (moveHistory.size() >= MAX_UNDO_HISTORY) {
-            moveHistory.remove(0);
+            moveHistory.removeLast(); // drop the oldest snapshot (tail), O(1)
         }
         moveHistory.push(new GameSnapshot(
                 board.createState(),

@@ -7,9 +7,7 @@ import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.layout.VBox;
-import javafx.scene.text.Font;
 import javafx.stage.Stage;
-import ui.UIConstants;
 
 public class DifficultyScreen {
     private Stage stage;
@@ -21,35 +19,39 @@ public class DifficultyScreen {
     }
 
     public Scene createScene(Runnable onBack) {
+        Theme theme = ThemeManager.getInstance().getCurrentTheme();
+
         VBox root = new VBox(UIConstants.SPACING_LARGE);
-        root.setStyle("-fx-background-color: #1e1e1e;");
+        UIStyle.applyScreenBackground(root, theme);
         root.setAlignment(Pos.CENTER);
         root.setPadding(new Insets(UIConstants.PADDING));
         root.setPrefSize(UIConstants.WINDOW_WIDTH, UIConstants.WINDOW_HEIGHT);
 
-        Label title = new Label("CHỌN ĐỘ KHÓ");
-        title.setFont(Font.font("Arial", UIConstants.FONT_SUBTITLE));
-        title.setStyle("-fx-text-fill: #ffff00;");
-        title.setAlignment(Pos.CENTER);
-        title.setMaxWidth(Double.MAX_VALUE);
+        Label title = UIStyle.title("CHỌN ĐỘ KHÓ", theme, UIConstants.FONT_SUBTITLE);
 
-        Button easyButton = createDifficultyButton("DỄ", Difficulty.EASY);
-        Button mediumButton = createDifficultyButton("TRUNG BÌNH", Difficulty.MEDIUM);
-        Button hardButton = createDifficultyButton("KHÓ", Difficulty.HARD);
+        VBox card = new VBox(UIConstants.SPACING_MEDIUM);
+        card.setAlignment(Pos.CENTER);
+        card.setPadding(new Insets(UIConstants.SPACING_LARGE));
+        card.setMaxWidth(UIConstants.BUTTON_WIDTH_SMALL + 2 * UIConstants.SPACING_LARGE);
+        card.setStyle(UIStyle.cardCss(theme));
 
-        Button backButton = new Button("QUAY LẠI");
-        backButton.setStyle("-fx-font-size: " + UIConstants.FONT_TINY + "; -fx-padding: " + UIConstants.BUTTON_PADDING_SMALL + "; -fx-background-color: #666666; -fx-text-fill: white;");
+        card.getChildren().addAll(
+                difficultyButton("DỄ", Difficulty.EASY, theme),
+                difficultyButton("TRUNG BÌNH", Difficulty.MEDIUM, theme),
+                difficultyButton("KHÓ", Difficulty.HARD, theme));
+
+        Button backButton = UIStyle.secondaryButton("QUAY LẠI", theme);
         backButton.setPrefWidth(UIConstants.BUTTON_WIDTH_SMALL);
         backButton.setOnAction(e -> onBack.run());
 
-        root.getChildren().addAll(title, easyButton, mediumButton, hardButton, backButton);
+        root.getChildren().addAll(title, card, backButton);
 
         return new Scene(root, UIConstants.WINDOW_WIDTH, UIConstants.WINDOW_HEIGHT);
     }
 
-    private Button createDifficultyButton(String label, Difficulty difficulty) {
-        Button button = new Button(label);
-        button.setStyle("-fx-font-size: " + UIConstants.FONT_MEDIUM + "; -fx-padding: " + UIConstants.BUTTON_PADDING + "; -fx-background-color: #0066ff; -fx-text-fill: white;");
+    private Button difficultyButton(String label, Difficulty difficulty, Theme theme) {
+        Button button = UIStyle.primaryButton(label, theme);
+        button.setMaxWidth(Double.MAX_VALUE);
         button.setPrefWidth(UIConstants.BUTTON_WIDTH_SMALL);
         button.setOnAction(e -> onDifficultySelected.accept(difficulty));
         return button;

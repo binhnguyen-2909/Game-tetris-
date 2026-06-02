@@ -31,17 +31,12 @@ public class SettingsScreenExtended {
         Theme currentTheme = themeManager.getCurrentTheme();
         
         VBox root = new VBox(UIConstants.SPACING_MEDIUM);
-        String bgColor = currentTheme.colorToCss(currentTheme.getBackgroundColor());
-        root.setStyle("-fx-background-color: " + bgColor + ";");
+        UIStyle.applyScreenBackground(root, currentTheme);
         root.setPadding(new Insets(UIConstants.PADDING));
         root.setPrefSize(UIConstants.WINDOW_WIDTH, UIConstants.WINDOW_HEIGHT);
 
         // Title
-        Label title = new Label("CÀI ĐẶT");
-        title.setFont(Font.font("Arial", UIConstants.FONT_SUBTITLE));
-        title.setStyle("-fx-text-fill: " + currentTheme.colorToCss(currentTheme.getAccentTextColor()) + ";");
-        title.setAlignment(Pos.CENTER);
-        title.setMaxWidth(Double.MAX_VALUE);
+        Label title = UIStyle.title("CÀI ĐẶT", currentTheme, UIConstants.FONT_SUBTITLE);
 
         // ScrollPane để cuộn nếu có nhiều options
         ScrollPane scrollPane = new ScrollPane();
@@ -53,28 +48,30 @@ public class SettingsScreenExtended {
         
         // 1. Theme Selection
         content.getChildren().add(createSectionTitle("CHỦ ĐỀ MÀU", currentTheme));
-        content.getChildren().add(createThemeSection(currentTheme));
-        
+        content.getChildren().add(asCard(createThemeSection(currentTheme), currentTheme));
+
         // 2. Key Bindings
         content.getChildren().add(createSectionTitle("ĐIỀU KHIỂN", currentTheme));
-        content.getChildren().add(createKeyBindingSection(currentTheme));
-        
+        content.getChildren().add(asCard(createKeyBindingSection(currentTheme), currentTheme));
+
         // 3. Gameplay Settings
         content.getChildren().add(createSectionTitle("GAMEPLAY", currentTheme));
-        content.getChildren().add(createGameplaySection(currentTheme));
-        
+        content.getChildren().add(asCard(createGameplaySection(currentTheme), currentTheme));
+
         // 4. Visual Settings
         content.getChildren().add(createSectionTitle("HIỂN THỊ", currentTheme));
-        content.getChildren().add(createVisualSection(currentTheme));
-        
+        content.getChildren().add(asCard(createVisualSection(currentTheme), currentTheme));
+
         // 5. Audio Settings (placeholder)
         content.getChildren().add(createSectionTitle("ÂM THANH", currentTheme));
-        content.getChildren().add(createAudioSection(currentTheme));
+        content.getChildren().add(asCard(createAudioSection(currentTheme), currentTheme));
         
         scrollPane.setContent(content);
         
         // Back button
-        Button backButton = createThemedButton("QUAY LẠI", currentTheme, e -> onBack.run());
+        Button backButton = UIStyle.secondaryButton("QUAY LẠI", currentTheme);
+        backButton.setPrefWidth(UIConstants.BUTTON_WIDTH_SMALL);
+        backButton.setOnAction(e -> onBack.run());
         VBox.setVgrow(scrollPane, Priority.ALWAYS);
         VBox.setVgrow(backButton, Priority.NEVER);
         
@@ -347,27 +344,11 @@ public class SettingsScreenExtended {
         return checkBox;
     }
     
-    private Button createThemedButton(String text, Theme theme, javafx.event.EventHandler<javafx.event.ActionEvent> handler) {
-        Button button = new Button(text);
-        String btnColor = theme.colorToCss(theme.getButtonColor());
-        String btnHoverColor = theme.colorToCss(theme.getButtonHoverColor());
-        String btnTextColor = theme.colorToCss(theme.getButtonTextColor());
-        
-        button.setStyle("-fx-font-size: " + UIConstants.FONT_MEDIUM + "; -fx-padding: " + UIConstants.BUTTON_PADDING + 
-                       "; -fx-background-color: " + btnColor + "; -fx-text-fill: " + btnTextColor + ";");
-        button.setPrefWidth(UIConstants.BUTTON_WIDTH_SMALL);
-        button.setOnAction(handler);
-        
-        button.setOnMouseEntered(e -> {
-            button.setStyle("-fx-font-size: " + UIConstants.FONT_MEDIUM + "; -fx-padding: " + UIConstants.BUTTON_PADDING + 
-                           "; -fx-background-color: " + btnHoverColor + "; -fx-text-fill: " + btnTextColor + ";");
-        });
-        button.setOnMouseExited(e -> {
-            button.setStyle("-fx-font-size: " + UIConstants.FONT_MEDIUM + "; -fx-padding: " + UIConstants.BUTTON_PADDING + 
-                           "; -fx-background-color: " + btnColor + "; -fx-text-fill: " + btnTextColor + ";");
-        });
-        
-        return button;
+    /** Wrap a settings section in a themed "card" surface for visual consistency. */
+    private VBox asCard(VBox section, Theme theme) {
+        section.setStyle(UIStyle.cardCss(theme));
+        section.setPadding(new Insets(UIConstants.SPACING_MEDIUM));
+        return section;
     }
 }
 

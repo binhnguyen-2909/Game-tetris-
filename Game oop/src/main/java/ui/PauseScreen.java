@@ -27,60 +27,38 @@ public class PauseScreen {
     }
 
     public Scene createScene() {
+        Theme theme = ThemeManager.getInstance().getCurrentTheme();
+
         VBox root = new VBox(UIConstants.SPACING_LARGE);
-        root.setStyle("-fx-background-color: rgba(0, 0, 0, 0.8);");
+        root.setStyle("-fx-background-color: rgba(0, 0, 0, 0.82);");
         root.setAlignment(Pos.CENTER);
         root.setPadding(new Insets(UIConstants.PADDING));
         root.setPrefSize(UIConstants.WINDOW_WIDTH, UIConstants.WINDOW_HEIGHT);
 
-        // Title
-        Text title = new Text("PAUSED");
+        Text title = new Text("TẠM DỪNG");
         title.setFont(Font.font("Arial", FontWeight.BOLD, UIConstants.FONT_TITLE));
         title.setFill(Color.WHITE);
-        title.setStyle("-fx-effect: dropshadow(one-pass-box, rgba(255,255,255,0.8), 10, 0, 0, 0);");
+        title.setStyle("-fx-effect: dropshadow(gaussian, rgba(255,255,255,0.8), 12, 0, 0, 0);");
 
-        // Resume button
-        Button resumeButton = createMenuButton("Resume", () -> {
-            if (onResume != null) {
-                onResume.run();
-            }
-        });
+        VBox card = new VBox(UIConstants.SPACING_MEDIUM);
+        card.setAlignment(Pos.CENTER);
+        card.setPadding(new Insets(UIConstants.SPACING_LARGE));
+        card.setMaxWidth(UIConstants.BUTTON_WIDTH + 2 * UIConstants.SPACING_LARGE);
+        card.setStyle(UIStyle.cardCss(theme));
 
-        // Back to Menu button
-        Button backToMenuButton = createMenuButton("Back to Menu", () -> {
-            if (onBackToMenu != null) {
-                onBackToMenu.run();
-            }
-        });
+        card.getChildren().addAll(
+                menuButton(UIStyle.primaryButton("Tiếp tục", theme), onResume),
+                menuButton(UIStyle.primaryButton("Về Menu", theme), onBackToMenu),
+                menuButton(UIStyle.primaryButton("Cài đặt", theme), onSettings),
+                menuButton(UIStyle.secondaryButton("Thoát", theme), onQuit));
 
-        // Settings button
-        Button settingsButton = createMenuButton("Settings", () -> {
-            if (onSettings != null) {
-                onSettings.run();
-            }
-        });
-
-        // Quit button
-        Button quitButton = createMenuButton("Quit", () -> {
-            if (onQuit != null) {
-                onQuit.run();
-            }
-        });
-
-        root.getChildren().addAll(
-            title,
-            resumeButton,
-            backToMenuButton,
-            settingsButton,
-            quitButton
-        );
+        root.getChildren().addAll(title, card);
 
         Scene scene = new Scene(root, UIConstants.WINDOW_WIDTH, UIConstants.WINDOW_HEIGHT);
-        
-        // Xử lý phím P để resume
+
         scene.setOnKeyPressed(event -> {
-            if (event.getCode() == javafx.scene.input.KeyCode.P || 
-                event.getCode() == javafx.scene.input.KeyCode.ESCAPE) {
+            if (event.getCode() == javafx.scene.input.KeyCode.P
+                    || event.getCode() == javafx.scene.input.KeyCode.ESCAPE) {
                 if (onResume != null) {
                     onResume.run();
                 }
@@ -90,53 +68,14 @@ public class PauseScreen {
         return scene;
     }
 
-    private Button createMenuButton(String text, Runnable action) {
-        Button button = new Button(text);
-        button.setFont(Font.font("Arial", UIConstants.FONT_LARGE));
+    private Button menuButton(Button button, Runnable action) {
         button.setPrefWidth(UIConstants.BUTTON_WIDTH);
-        button.setPrefHeight(UIConstants.BUTTON_HEIGHT);
-        button.setStyle(
-            "-fx-background-color: #4a4a4a; " +
-            "-fx-text-fill: white; " +
-            "-fx-border-color: #666666; " +
-            "-fx-border-width: 2px; " +
-            "-fx-border-radius: 5px; " +
-            "-fx-background-radius: 5px; " +
-            "-fx-cursor: hand;"
-        );
-        
-        // Hover effect
-        button.setOnMouseEntered(e -> {
-            button.setStyle(
-                "-fx-background-color: #5a5a5a; " +
-                "-fx-text-fill: white; " +
-                "-fx-border-color: #777777; " +
-                "-fx-border-width: 2px; " +
-                "-fx-border-radius: 5px; " +
-                "-fx-background-radius: 5px; " +
-                "-fx-cursor: hand;"
-            );
-        });
-        
-        button.setOnMouseExited(e -> {
-            button.setStyle(
-                "-fx-background-color: #4a4a4a; " +
-                "-fx-text-fill: white; " +
-                "-fx-border-color: #666666; " +
-                "-fx-border-width: 2px; " +
-                "-fx-border-radius: 5px; " +
-                "-fx-background-radius: 5px; " +
-                "-fx-cursor: hand;"
-            );
-        });
-        
+        button.setMaxWidth(Double.MAX_VALUE);
         button.setOnAction(e -> {
             if (action != null) {
                 action.run();
             }
         });
-
         return button;
     }
 }
-

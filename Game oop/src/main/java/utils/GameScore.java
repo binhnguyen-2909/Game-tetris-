@@ -42,8 +42,12 @@ public class GameScore implements Comparable<GameScore> {
     public static GameScore fromString(String line) {
         String[] parts = line.split("\\|");
         if (parts.length == 4) {
-            GameScore score = new GameScore(parts[0], Integer.parseInt(parts[1]), parts[2]);
-            return score;
+            try {
+                return new GameScore(parts[0], Integer.parseInt(parts[1]), parts[2]);
+            } catch (NumberFormatException e) {
+                // Corrupted/edited line: skip it instead of crashing leaderboard load.
+                return null;
+            }
         }
         return null;
     }
